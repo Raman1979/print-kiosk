@@ -44,6 +44,23 @@ router.post("/upload", (req, res) => {
     if (!Number.isInteger(copies) || copies < 1) copies = 1;
     if (copies > 50) copies = 50; // sane upper bound for a walk-in kiosk
 
+    const ALLOWED_PAPER_SIZES = new Set(["A4", "Letter", "Legal", "A3"]);
+    let paperSize = req.body.paperSize;
+    if (!ALLOWED_PAPER_SIZES.has(paperSize)) paperSize = "A4";
+
+    // Duplex only makes physical sense for the B&W printer in this shop
+    // (the color printer is single-sided only) — enforce that server-side
+    // too, regardless of what the client sent.
+    const duplexRequested = req.body.duplex === "true" || req.body.duplex === "1";
+    const duplex = !color && duplexRequested ? 1 : 0;
+
+    // Page range like "1-3,5,8" — validated loosely here; the print agent
+    // treats an empty string as "all pages".
+    let pageRange = (req.body.pageRange || "").trim();
+    if (pageRange && !/^[0-9,-]+$/.test(pageRange)) {
+      pageRange = ""; // ignore malformed input rather than reject the whole job
+    }
+
     const jobId = req.generatedJobId; // set inside multerConfig's filename()
 
     try {
@@ -55,10 +72,13 @@ router.post("/upload", (req, res) => {
         file_size_bytes: req.file.size,
         color,
         copies,
+        paper_size: paperSize,
+        duplex,
+        page_range: pageRange,
         status: "pending",
       });
 
-      log(`Job queued: ${jobId} (${req.file.originalname}, ${copies}x, color=${!!color})`);
+      log(`Job queued: ${jobId} (${req.file.originalname}, ${copies}x, color=${!!color}, paper=${paperSize}, duplex=${!!duplex}, pages=${pageRange || "all"})`);
 
       return res.status(201).json({
         success: true,

@@ -71,6 +71,46 @@ print-kiosk/
 └── README.md
 ```
 
+## Preview and page selection
+
+The upload page now shows a live preview before the customer submits:
+
+- **PDFs** render an actual thumbnail of page 1 (via pdf.js, loaded from a
+  CDN — no server-side work needed) and show the total page count. A
+  "Pages to print" field lets the customer type a range like `1-3, 5`;
+  leaving it blank prints everything. Input is validated against the
+  actual page count before submission.
+- **Images** show the photo itself as the thumbnail; there's no page
+  range field since a single image has no pages to choose from.
+
+The chosen range is passed straight to SumatraPDF's `-print-settings`
+flag on the agent side, so `1-3,5` really does print only those pages
+(PDFs only — page ranges don't apply to images and are ignored for them).
+
+## Two printers (color + B&W) and paper size / duplex control
+
+If your shop has two printers — e.g. a B&W printer that also does
+double-sided (duplex) printing, and a color printer that's single-sided
+only — the agent routes each job automatically:
+
+- Jobs marked **Color** → `PRINTER_NAME_COLOR`
+- Everything else (B&W) → `PRINTER_NAME_BW`
+
+Set both in `print-agent/.env`. If you only have one printer, set both
+variables to the same name.
+
+**Paper size and "print on both sides"** are customer-facing options in
+the upload form. To make these actually take effect (not just be recorded),
+download the free, portable **SumatraPDF.exe** and place it at
+`print-agent/tools/SumatraPDF.exe` — see `print-agent/tools/README.txt`
+for the exact link. Without it, PDFs still print fine, just using the
+printer's current default paper size / sidedness instead of what the
+customer picked.
+
+The server also enforces this rule itself: even if someone tampers with
+the upload request directly, "duplex" is silently forced off for any job
+marked "color", since the color printer can't do double-sided.
+
 ## Running Step 1 locally
 
 ```bash

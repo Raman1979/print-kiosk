@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
 <title>Print Job — Submit Document</title>
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 </head>
 <body>
 
@@ -41,6 +42,22 @@
       </label>
       <input type="file" id="fileInput" name="document" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden required>
       <p class="field__error" id="fileError" role="alert"></p>
+
+      <div class="preview" id="previewBox" hidden>
+        <div class="preview__thumbWrap">
+          <img class="preview__thumb" id="previewImg" alt="Document preview">
+          <canvas class="preview__thumb" id="previewCanvas" hidden></canvas>
+        </div>
+        <div class="preview__info">
+          <span id="previewMeta">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="field" id="pageRangeField" hidden>
+      <label class="field__label" for="pageRangeInput">Pages to print</label>
+      <input type="text" id="pageRangeInput" name="pageRange" class="text-input" placeholder="e.g. 1-3, 5 (leave blank for all pages)">
+      <p class="field__error" id="pageRangeError" role="alert"></p>
     </div>
 
     <div class="field">
@@ -57,6 +74,25 @@
           Color
         </label>
       </div>
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="paperSizeInput">Paper size</label>
+      <select id="paperSizeInput" name="paperSize" class="select">
+        <option value="A4" selected>A4</option>
+        <option value="Letter">Letter</option>
+        <option value="Legal">Legal</option>
+        <option value="A3">A3</option>
+      </select>
+    </div>
+
+    <div class="field" id="duplexField">
+      <label class="toggle" for="duplexInput">
+        <input type="checkbox" id="duplexInput" name="duplex">
+        <span class="toggle__track" aria-hidden="true"><span class="toggle__thumb"></span></span>
+        <span class="toggle__label">Print on both sides</span>
+      </label>
+      <p class="field__hint">Only available for Black &amp; White (this printer supports duplex).</p>
     </div>
 
     <div class="field">
@@ -102,6 +138,18 @@
       <div class="receipt__row">
         <dt>Copies</dt>
         <dd id="receiptCopies">—</dd>
+      </div>
+      <div class="receipt__row">
+        <dt>Paper</dt>
+        <dd id="receiptPaper">—</dd>
+      </div>
+      <div class="receipt__row">
+        <dt>Sides</dt>
+        <dd id="receiptDuplex">—</dd>
+      </div>
+      <div class="receipt__row">
+        <dt>Pages</dt>
+        <dd id="receiptPages">—</dd>
       </div>
     </dl>
     <p class="state-subtext">Show this Job ID at the counter if anyone asks.</p>
