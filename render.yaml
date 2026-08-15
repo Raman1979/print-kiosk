@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: print-kiosk-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: MAX_FILE_SIZE_MB
+        value: 25
+      - key: AGENT_API_KEY
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: "*"

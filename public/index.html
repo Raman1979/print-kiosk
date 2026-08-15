@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Print Job — Submit Document</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="ticket">
+
+  <div class="ticket__perf ticket__perf--top" aria-hidden="true"></div>
+
+  <header class="ticket__header">
+    <svg class="ticket__mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect x="10" y="6" width="28" height="14" rx="1" stroke="currentColor" stroke-width="2"/>
+      <path d="M10 20H8a4 4 0 0 0-4 4v10a4 4 0 0 0 4 4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <path d="M38 20h2a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4h-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <rect x="12" y="26" width="24" height="16" rx="1" stroke="currentColor" stroke-width="2"/>
+      <line x1="17" y1="32" x2="31" y2="32" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="17" y1="36" x2="27" y2="36" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <p class="ticket__eyebrow">Job Docket</p>
+    <h1 class="ticket__title">Send it to the printer</h1>
+    <p class="ticket__sub">Pick a file, set your options, submit — it'll be ready at the counter.</p>
+  </header>
+
+  <!-- ===== FORM STATE ===== -->
+  <form id="uploadForm" class="ticket__body" novalidate>
+
+    <div class="field">
+      <label class="field__label" for="fileInput">Document</label>
+      <label for="fileInput" class="dropzone" id="dropzone">
+        <svg class="dropzone__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 15V4M12 4L7 9M12 4l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="dropzone__text" id="dropzoneText">Tap to choose a PDF or photo</span>
+        <span class="dropzone__hint">PDF, JPG, PNG, or WEBP · up to 25MB</span>
+      </label>
+      <input type="file" id="fileInput" name="document" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden required>
+      <p class="field__error" id="fileError" role="alert"></p>
+    </div>
+
+    <div class="field">
+      <span class="field__label">Finish</span>
+      <div class="segmented" role="radiogroup" aria-label="Print finish">
+        <input type="radio" name="color" id="finishBw" value="false" checked>
+        <label for="finishBw">
+          <span class="segmented__swatch segmented__swatch--bw" aria-hidden="true"></span>
+          Black &amp; White
+        </label>
+        <input type="radio" name="color" id="finishColor" value="true">
+        <label for="finishColor">
+          <span class="segmented__swatch segmented__swatch--color" aria-hidden="true"></span>
+          Color
+        </label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="copiesInput">Copies</label>
+      <div class="stepper">
+        <button type="button" class="stepper__btn" id="copiesDown" aria-label="Decrease copies">−</button>
+        <input type="number" id="copiesInput" name="copies" value="1" min="1" max="50" inputmode="numeric">
+        <button type="button" class="stepper__btn" id="copiesUp" aria-label="Increase copies">+</button>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-submit" id="submitBtn">
+      <span id="submitBtnText">Send to printer</span>
+    </button>
+
+    <p class="form-error" id="formError" role="alert"></p>
+  </form>
+
+  <!-- ===== UPLOADING STATE ===== -->
+  <div class="ticket__body ticket__body--center" id="uploadingState" hidden>
+    <div class="spinner" aria-hidden="true"></div>
+    <p class="state-text">Sending your file up…</p>
+    <p class="state-subtext">Don't close this tab.</p>
+  </div>
+
+  <!-- ===== SUCCESS STATE ===== -->
+  <div class="ticket__body" id="successState" hidden>
+    <div class="stamp" aria-hidden="true">QUEUED</div>
+    <p class="state-text state-text--success">You're in the queue.</p>
+    <dl class="receipt">
+      <div class="receipt__row">
+        <dt>Job ID</dt>
+        <dd id="receiptJobId">—</dd>
+      </div>
+      <div class="receipt__row">
+        <dt>File</dt>
+        <dd id="receiptFile">—</dd>
+      </div>
+      <div class="receipt__row">
+        <dt>Finish</dt>
+        <dd id="receiptFinish">—</dd>
+      </div>
+      <div class="receipt__row">
+        <dt>Copies</dt>
+        <dd id="receiptCopies">—</dd>
+      </div>
+    </dl>
+    <p class="state-subtext">Show this Job ID at the counter if anyone asks.</p>
+    <button type="button" class="btn-secondary" id="newJobBtn">Submit another document</button>
+  </div>
+
+  <!-- ===== ERROR STATE ===== -->
+  <div class="ticket__body" id="errorState" hidden>
+    <div class="stamp stamp--error" aria-hidden="true">FAILED</div>
+    <p class="state-text state-text--error" id="errorStateText">Something went wrong.</p>
+    <button type="button" class="btn-secondary" id="retryBtn">Try again</button>
+  </div>
+
+  <div class="ticket__perf ticket__perf--bottom" aria-hidden="true"></div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
