@@ -305,6 +305,9 @@ body {
   object-fit: contain;
   display: block;
 }
+.preview__thumb[hidden] {
+  display: none;
+}
 .preview__info {
   font-size: 12.5px;
   color: var(--ink-soft);
