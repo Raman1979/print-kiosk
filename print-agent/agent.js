@@ -49,38 +49,81 @@ const api = axios.create({
 });
 
 // ---- Printing ----
-// Fires one print via the OS's own "print" file association. This avoids
-// needing any native Node modules (which require a C++ compiler to
-// install on Windows) — it just asks Windows/macOS/Linux to do what
-// right-click -> Print already does for that file type.
-function printOnce(filePath) {
+// Windows doesn't reliably register a "Print" verb for every file type via
+// the generic Start-Process -Verb Print route (this is especially flaky
+// for JPG/PNG depending on which photo app is installed/default). So we
+// use two different, well-tested mechanisms depending on file type — both
+// still avoid any native Node module / compiler requirement.
+
+let cachedDefaultPrinter = null;
+
+function getWindowsDefaultPrinterName() {
   return new Promise((resolve, reject) => {
-    const platform = os.platform();
-    let command;
+    if (cachedDefaultPrinter) return resolve(cachedDefaultPrinter);
+    const cmd = `powershell -Command "(Get-CimInstance -ClassName Win32_Printer | Where-Object {$_.Default -eq $true}).Name"`;
+    exec(cmd, { windowsHide: true }, (err, stdout) => {
+      if (err) return reject(err);
+      const name = stdout.trim();
+      if (!name) return reject(new Error("Could not detect a default Windows printer."));
+      cachedDefaultPrinter = name;
+      resolve(name);
+    });
+  });
+}
 
-    if (platform === "win32") {
-      const psFile = filePath.replace(/'/g, "''");
-      if (PRINTER_NAME) {
-        const psPrinter = PRINTER_NAME.replace(/'/g, "''");
-        command = `powershell -Command "Start-Process -FilePath '${psFile}' -Verb printto -ArgumentList '\\"${psPrinter}\\"' -Wait"`;
-      } else {
-        command = `powershell -Command "Start-Process -FilePath '${psFile}' -Verb Print -Wait"`;
-      }
-    } else if (platform === "darwin" || platform === "linux") {
-      // Requires CUPS ('lp' command), which ships by default on macOS
-      // and most Linux desktop distros.
-      command = PRINTER_NAME
-        ? `lp -d "${PRINTER_NAME}" "${filePath}"`
-        : `lp "${filePath}"`;
-    } else {
-      return reject(new Error(`Unsupported platform: ${platform}`));
-    }
+function isImageFile(filePath) {
+  return [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"].includes(
+    path.extname(filePath).toLowerCase()
+  );
+}
 
-    exec(command, { windowsHide: true }, (err, stdout, stderr) => {
+async function printOnceWindows(filePath) {
+  const psFile = filePath.replace(/'/g, "''");
+
+  if (isImageFile(filePath)) {
+    // shimgvw.dll ships with every Windows 10/11 install and reliably
+    // exposes a silent "print this image" entry point, unlike the
+    // generic shell Print verb which depends on whichever photo app is
+    // currently the default handler.
+    const printerName = PRINTER_NAME || (await getWindowsDefaultPrinterName());
+    const psPrinter = printerName.replace(/'/g, "''");
+    const command = `rundll32.exe C:\\Windows\\System32\\shimgvw.dll,ImageView_PrintTo "${psFile}" "${psPrinter}"`;
+    return execPromise(command);
+  }
+
+  // PDFs (and anything else): use the file's own default handler's Print
+  // verb. Works reliably for PDFs since Edge (the usual default PDF
+  // viewer on Windows) registers this properly.
+  const command = PRINTER_NAME
+    ? `powershell -Command "Start-Process -FilePath '${psFile}' -Verb printto -ArgumentList '\\"${PRINTER_NAME.replace(/'/g, "''")}\\"'"`
+    : `powershell -Command "Start-Process -FilePath '${psFile}' -Verb Print"`;
+  return execPromise(command);
+}
+
+function execPromise(command) {
+  return new Promise((resolve, reject) => {
+    exec(command, { windowsHide: true }, (err) => {
       if (err) return reject(err);
       resolve();
     });
   });
+}
+
+function printOnce(filePath) {
+  const platform = os.platform();
+
+  if (platform === "win32") {
+    return printOnceWindows(filePath);
+  }
+
+  if (platform === "darwin" || platform === "linux") {
+    const command = PRINTER_NAME
+      ? `lp -d "${PRINTER_NAME}" "${filePath}"`
+      : `lp "${filePath}"`;
+    return execPromise(command);
+  }
+
+  return Promise.reject(new Error(`Unsupported platform: ${platform}`));
 }
 
 async function printCopies(filePath, copies) {
