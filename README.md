@@ -87,6 +87,24 @@ The chosen range is passed straight to SumatraPDF's `-print-settings`
 flag on the agent side, so `1-3,5` really does print only those pages
 (PDFs only — page ranges don't apply to images and are ignored for them).
 
+## One-click start + auto-restart (recommended)
+
+Instead of typing `npm start` every morning, set up a desktop icon once:
+
+1. In the `print-agent` folder, double-click **`Setup Desktop Icon.bat`**
+   (if Windows shows a security prompt, click "Run anyway" / "Yes")
+2. This creates a **"Start Print Agent"** shortcut with a printer icon in
+   two places:
+   - Your **Desktop** — double-click it any time to start the agent
+   - Your **Startup folder** — the agent now launches automatically every
+     time the shop PC turns on, no manual step needed
+
+The agent itself now runs through `start-agent.bat`, which **automatically
+restarts it 5 seconds after it stops** (e.g. if it crashes or you
+accidentally hit Ctrl+C) — as long as you don't close the window itself.
+Minimizing the window is fine; closing it (the X button) stops printing
+for real, so leave it open/minimized whenever the shop is open.
+
 ## Two printers (color + B&W) and paper size / duplex control
 
 If your shop has two printers — e.g. a B&W printer that also does

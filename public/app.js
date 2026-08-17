@@ -1,7 +1,7 @@
 // public/app.js
-// Handles the mobile upload form: file selection, preview, page-range
-// selection, client-side checks, posting to POST /api/upload, and
-// swapping between the four visual states (form / uploading / success / error).
+// Handles the mobile upload form: file selection, large preview, a
+// full-screen page browser/picker, page-range selection, client-side
+// checks, posting to POST /api/upload, and the four visual states.
 
 (() => {
   const MAX_FILE_MB = 25;
@@ -39,6 +39,17 @@
   const pageRangeInput = document.getElementById("pageRangeInput");
   const pageRangeError = document.getElementById("pageRangeError");
 
+  // Full-screen modal elements
+  const modal = document.getElementById("previewModal");
+  const modalTitle = document.getElementById("modalTitle");
+  const modalSubtitle = document.getElementById("modalSubtitle");
+  const modalClose = document.getElementById("modalClose");
+  const modalToolbar = document.getElementById("modalToolbar");
+  const modalSelectAll = document.getElementById("modalSelectAll");
+  const modalSelectNone = document.getElementById("modalSelectNone");
+  const modalScroll = document.getElementById("modalScroll");
+  const modalDone = document.getElementById("modalDone");
+
   const states = {
     form: document.getElementById("uploadForm"),
     uploading: document.getElementById("uploadingState"),
@@ -54,7 +65,11 @@
 
   // ---- File selection state ----
   let selectedFile = null;
+  let currentPdfDoc = null;       // pdf.js document proxy, kept around for the modal
   let currentPdfPageCount = null; // null when the file isn't a PDF (or not yet parsed)
+  let currentObjectUrl = null;    // for image previews, so we can revoke it later
+  let selectedPages = new Set();  // pages currently chosen in the modal (PDF only)
+  let pageObserver = null;        // IntersectionObserver for lazy page rendering
 
   function resetPreview() {
     previewBox.hidden = true;
@@ -66,6 +81,12 @@
     pageRangeInput.value = "";
     pageRangeError.textContent = "";
     currentPdfPageCount = null;
+    currentPdfDoc = null;
+    selectedPages = new Set();
+    if (currentObjectUrl) {
+      URL.revokeObjectURL(currentObjectUrl);
+      currentObjectUrl = null;
+    }
   }
 
   function formatBytes(bytes) {
@@ -77,12 +98,17 @@
   async function showPdfPreview(file) {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    currentPdfDoc = pdf;
     currentPdfPageCount = pdf.numPages;
 
     const page = await pdf.getPage(1);
     const viewport = page.getViewport({ scale: 1 });
-    const targetWidth = 100; // render a bit larger than the CSS box, then let CSS scale down crisply
-    const scale = targetWidth / viewport.width;
+
+    // Render at a larger intrinsic size than the CSS box for crispness
+    // (especially on retina phone screens), then let CSS scale it down.
+    const dpr = window.devicePixelRatio || 1;
+    const targetCssWidth = 380;
+    const scale = (targetCssWidth * dpr) / viewport.width;
     const scaledViewport = page.getViewport({ scale });
 
     previewCanvas.width = scaledViewport.width;
@@ -99,6 +125,7 @@
 
   function showImagePreview(file) {
     const url = URL.createObjectURL(file);
+    currentObjectUrl = url;
     previewCanvas.hidden = true;
     previewImg.hidden = false;
     previewImg.src = url;
@@ -149,8 +176,51 @@
     }
   });
 
-  // ---- Page range validation ----
-  // Accepts things like "1-3, 5, 8" — empty means "all pages".
+  // ---- Page range <-> Set helpers ----
+  function parseRangeToSet(str, maxPages) {
+    const set = new Set();
+    const cleaned = (str || "").trim().replace(/\s+/g, "");
+    if (!cleaned) {
+      // Blank means "all pages"
+      for (let i = 1; i <= maxPages; i++) set.add(i);
+      return set;
+    }
+    cleaned.split(",").filter(Boolean).forEach((part) => {
+      const rangeMatch = part.match(/^(\d+)-(\d+)$/);
+      const singleMatch = part.match(/^(\d+)$/);
+      if (rangeMatch) {
+        const [, a, b] = rangeMatch;
+        for (let i = Number(a); i <= Number(b); i++) {
+          if (i >= 1 && i <= maxPages) set.add(i);
+        }
+      } else if (singleMatch) {
+        const n = Number(singleMatch[1]);
+        if (n >= 1 && n <= maxPages) set.add(n);
+      }
+    });
+    return set;
+  }
+
+  function formatSetToRange(set, maxPages) {
+    if (set.size === 0 || set.size === maxPages) return ""; // "" == all pages
+    const sorted = [...set].sort((a, b) => a - b);
+    const parts = [];
+    let start = sorted[0];
+    let prev = sorted[0];
+    for (let i = 1; i <= sorted.length; i++) {
+      const cur = sorted[i];
+      if (cur === prev + 1) {
+        prev = cur;
+        continue;
+      }
+      parts.push(start === prev ? `${start}` : `${start}-${prev}`);
+      start = cur;
+      prev = cur;
+    }
+    return parts.join(",");
+  }
+
+  // ---- Page range validation (text field, typed manually) ----
   function validatePageRange() {
     const raw = pageRangeInput.value.trim();
     pageRangeError.textContent = "";
@@ -196,6 +266,175 @@
 
   pageRangeInput.addEventListener("input", () => {
     pageRangeError.textContent = "";
+  });
+
+  // ---- Full-screen modal ----
+  function openModal() {
+    if (!selectedFile) return;
+    modal.hidden = false;
+    document.body.style.overflow = "hidden";
+    modalTitle.textContent = selectedFile.name;
+
+    if (currentPdfDoc) {
+      selectedPages = parseRangeToSet(pageRangeInput.value, currentPdfPageCount);
+      modalSubtitle.textContent = `${currentPdfPageCount} page${currentPdfPageCount === 1 ? "" : "s"}`;
+      modalToolbar.hidden = false;
+      renderModalPdf();
+    } else {
+      modalSubtitle.textContent = formatBytes(selectedFile.size);
+      modalToolbar.hidden = true;
+      renderModalImage();
+    }
+  }
+
+  function closeModal() {
+    modal.hidden = true;
+    document.body.style.overflow = "";
+    if (pageObserver) {
+      pageObserver.disconnect();
+      pageObserver = null;
+    }
+    modalScroll.innerHTML = "";
+  }
+
+  function renderModalImage() {
+    modalScroll.innerHTML = "";
+    const img = document.createElement("img");
+    img.className = "modal__image";
+    img.src = currentObjectUrl;
+    img.alt = "Full document preview";
+    modalScroll.appendChild(img);
+  }
+
+  async function renderModalPdf() {
+    modalScroll.innerHTML = "";
+    const firstPage = await currentPdfDoc.getPage(1);
+    const vp = firstPage.getViewport({ scale: 1 });
+    const aspectRatio = vp.width / vp.height;
+
+    const wraps = [];
+
+    for (let pageNum = 1; pageNum <= currentPdfPageCount; pageNum++) {
+      const item = document.createElement("div");
+      item.className = "modal__page";
+
+      const wrap = document.createElement("div");
+      wrap.className = "modal__pageCanvasWrap";
+      wrap.style.aspectRatio = String(aspectRatio);
+      wrap.dataset.pageNum = String(pageNum);
+
+      const loading = document.createElement("span");
+      loading.className = "modal__pageLoading";
+      loading.textContent = "Loading…";
+      wrap.appendChild(loading);
+
+      const badge = document.createElement("span");
+      badge.className = "modal__pageBadge";
+      badge.textContent = String(pageNum);
+      wrap.appendChild(badge);
+
+      const check = document.createElement("span");
+      check.className = "modal__pageCheck";
+      check.textContent = "✓";
+      wrap.appendChild(check);
+
+      wrap.addEventListener("click", () => togglePage(pageNum, wrap));
+
+      item.appendChild(wrap);
+      modalScroll.appendChild(item);
+      wraps.push(wrap);
+      applySelectionClass(wrap, pageNum);
+    }
+
+    // Lazily render each page's canvas only once it's scrolled near view.
+    pageObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            renderOnePdfPage(entry.target);
+            pageObserver.unobserve(entry.target);
+          }
+        });
+      },
+      { root: modalScroll, rootMargin: "600px 0px" }
+    );
+    wraps.forEach((w) => pageObserver.observe(w));
+  }
+
+  async function renderOnePdfPage(wrap) {
+    const pageNum = Number(wrap.dataset.pageNum);
+    try {
+      const page = await currentPdfDoc.getPage(pageNum);
+      const dpr = window.devicePixelRatio || 1;
+      const targetCssWidth = Math.min(480, modalScroll.clientWidth || 380);
+      const baseViewport = page.getViewport({ scale: 1 });
+      const scale = (targetCssWidth * dpr) / baseViewport.width;
+      const viewport = page.getViewport({ scale });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext("2d");
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      const loadingEl = wrap.querySelector(".modal__pageLoading");
+      if (loadingEl) loadingEl.remove();
+      wrap.appendChild(canvas);
+    } catch (err) {
+      const loadingEl = wrap.querySelector(".modal__pageLoading");
+      if (loadingEl) loadingEl.textContent = "Couldn't load this page";
+    }
+  }
+
+  function applySelectionClass(wrap, pageNum) {
+    const isSelected = selectedPages.has(pageNum);
+    wrap.classList.toggle("is-selected", isSelected);
+    wrap.classList.toggle("is-deselected", !isSelected);
+  }
+
+  function togglePage(pageNum, wrap) {
+    if (selectedPages.has(pageNum)) {
+      selectedPages.delete(pageNum);
+    } else {
+      selectedPages.add(pageNum);
+    }
+    applySelectionClass(wrap, pageNum);
+  }
+
+  function commitSelectionToField() {
+    if (currentPdfDoc) {
+      pageRangeInput.value = formatSetToRange(selectedPages, currentPdfPageCount);
+      pageRangeError.textContent = "";
+    }
+  }
+
+  previewBox.addEventListener("click", openModal);
+  modalClose.addEventListener("click", () => {
+    commitSelectionToField();
+    closeModal();
+  });
+  modalDone.addEventListener("click", () => {
+    commitSelectionToField();
+    closeModal();
+  });
+  modal.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      commitSelectionToField();
+      closeModal();
+    }
+  });
+
+  modalSelectAll.addEventListener("click", () => {
+    selectedPages = new Set(Array.from({ length: currentPdfPageCount }, (_, i) => i + 1));
+    modalScroll.querySelectorAll(".modal__pageCanvasWrap").forEach((wrap) => {
+      applySelectionClass(wrap, Number(wrap.dataset.pageNum));
+    });
+  });
+  modalSelectNone.addEventListener("click", () => {
+    selectedPages = new Set();
+    modalScroll.querySelectorAll(".modal__pageCanvasWrap").forEach((wrap) => {
+      applySelectionClass(wrap, Number(wrap.dataset.pageNum));
+    });
   });
 
   // ---- Copies stepper ----
